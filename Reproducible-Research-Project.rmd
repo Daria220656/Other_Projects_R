@@ -1,0 +1,561 @@
+---
+title: "Income"
+author: "Daria Ivanushenko"
+date: "5/10/2022"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+params:
+  year: 1995
+---
+
+```{r setup, include=FALSE}
+#install.packages("knitr")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Report for `r params$year`
+
+## **Data Description**
+
+
+Dataset describes income depending on different demographical characteristics. Main goal of the analysis is to predict income taking into account their age, country of origin, eduaction and etc. 
+
+**Columns:**
+
+* **age**: the age of an individual
+Integer greater than 0
+* **workclass**: a general term to represent the employment status of an individual
+Private, Self-emp-not-inc, Self-emp-inc, Federal-gov, Local-gov, State-gov, Without-pay, Never-worked.
+* **fnlwgt**: this is the number of people the census believes the entry represents.
+Integer greater than 0
+* **education**: the highest level of education achieved by an individual.
+Bachelors, Some-college, 11th, HS-grad, Prof-school, Assoc-acdm, Assoc-voc, 9th, 7th-8th, 12th, Masters, 1st-4th, 10th, Doctorate, 5th-6th, Preschool.
+* **education-num**: the highest level of education achieved in numerical form.
+Integer greater than 0
+* **marital-status**: marital status of an individual. Married-civ-spouse corresponds to a civilian spouse while Married-AF-spouse is a spouse in the Armed Forces.
+Married-civ-spouse, Divorced, Never-married, Separated, Widowed, Married-spouse-absent, Married-AF-spouse.
+* **occupation**: the general type of occupation of an individual
+Tech-support, Craft-repair, Other-service, Sales, Exec-managerial, Prof-specialty, Handlers-cleaners, Machine-op-inspct, Adm-clerical, Farming-fishing, Transport-moving, Priv-house-serv, Protective-serv, Armed-Forces.
+* **relationship**: represents what this individual is relative to others. For example an individual could be a Husband. Each entry only has one relationship attribute and is somewhat redundant with marital status. We might not make use of this attribute at all
+Wife, Own-child, Husband, Not-in-family, Other-relative, Unmarried.
+* **race**: Descriptions of an individual’s race
+White, Asian-Pac-Islander, Amer-Indian-Eskimo, Other, Black.
+* **sex**: the biological sex of the individual
+Male, female
+* **capital-gain**: capital gains for an individual
+Integer greater than or equal to 0
+* **capital-loss**: capital loss for an individual
+Integer greater than or equal to 0
+* **hours-per-week**: the hours an individual has reported to work per week
+continuous
+* **native-country**: country of origin for an individual
+United-States, Cambodia, England, Puerto-Rico, Canada, Germany, Outlying-US(Guam-USVI-etc), India, Japan, Greece, South, China, Cuba, Iran, Honduras, Philippines, Italy, Poland, Jamaica, Vietnam, Mexico, Portugal, Ireland, France, Dominican-Republic, Laos, Ecuador, Taiwan, Haiti, Columbia, Hungary, Guatemala, Nicaragua, Scotland, Thailand, Yugoslavia, El-Salvador, Trinadad&Tobago, Peru, Hong, Holand-Netherlands.
+* **income_bracket**: whether or not an individual makes more than $50,000 annually.
+<= 50K, >50K
+
+
+```{r, message=FALSE, warning=FALSE} 
+# options(repos = list(CRAN="http://cran.rstudio.com/"))
+# install.packages("dplyr")
+# install.packages("skimr")
+# install.packages('readr', repos = "http://cran.us.r-project.org")
+# install.packages("skimr")
+# install.packages("tidyr")
+# install.packages("rnaturalearth")
+# install.packages("cowplot")
+# install.packages("sf")
+# install.packages("ggmap")
+# install.packages("leaflet")
+library(skimr)
+library(readr)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(rnaturalearth)
+library(cowplot)
+library(sf)
+library(ggmap)
+library(leaflet)
+setwd("C:/Users/daria/OneDrive/Desktop/DSBA 1 semester/4 semestr/Reproducible research/Project")
+
+
+# loading data sets for Argentina, Peru and Uruguay
+data1 = read.csv("income.csv", header = TRUE, dec = ".")
+data1 = data1 %>% filter(year == params$year)
+```
+
+Dataset has `r dim(data1)[1]` observations and `r dim(data1)[2]` variables.  
+
+```{r, message=FALSE, warning=FALSE}
+library(DT)
+datatable(head(data1, 25),
+          class = 'cell-border stripe', 
+          rownames = FALSE, 
+          caption = htmltools::tags$caption(
+            style = 'caption-side: top; text-align: center;',
+            'Table 2: ', htmltools::em('Income Data')), 
+          filter = 'top', 
+          options = list(
+  initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#0D82E1 ', 'color': '#fff'});",
+    "}")))
+            
+
+dim(data1)
+
+colnames(data1)
+
+summary(data1)
+
+
+skim(data1) # we decided also to present following function as it gives great summery for data set describing types of variables, missing values and some basic statistics 
+
+# Missing data
+colSums(is.na(data1))
+```
+
+## **Data Preparation**
+
+```{r, message=FALSE}
+library(dplyr)
+library(stringr)
+library(tidyr)
+
+# Remove "." & Recode 1/0 and rename to "income"
+data1 <- data1 %>% 
+    mutate(income_bracket = str_replace(income_bracket, '\\.', ''),
+           income_bracket = ifelse(income_bracket == '<=50K', '0', '1'),
+           income_bracket = factor(income_bracket, levels = c('0', '1')))# First is considered a TRUE case
+
+
+colnames(data1)[16] = "income"
+
+
+# counts for income variable
+count(data1, income)
+
+# excluding final weight (fnlwgt) from dataset
+
+data1 = subset(data1, select = -c(fnlwgt))
+
+
+# checking for missing values
+colSums(is.na(data1))
+
+# replacing "?" with "missing" 
+
+data1$occupation[data1$occupation == "?"] = "missing_information"
+data1$native_country[data1$native_country == "?"] = "missing_information"
+data1$workclass[data1$workclass == "?"] = "missing_information"
+#data1$native_country[data1$native_country=="?"] = "missing_information"
+
+```
+
+## **Merging Underrepresented levels**
+
+```{r, message=FALSE}
+
+count(data1, marital_status)
+
+data1 <- data1 %>% 
+  mutate(
+    marital_status = ifelse(marital_status %in% c('Married-spouse-absent', 
+                                                  'Married-AF-spouse', 
+                                                  'Married-civ-spouse'),
+                            'Married', marital_status)
+  )
+
+count(data1, occupation)
+
+data1 <- data1 %>% 
+  mutate(
+    occupation = ifelse(occupation == 'Armed-Forces', 'Protective-serv', 
+                        occupation)
+  )
+
+
+count(data1, native_country) %>% arrange(-n)
+
+data1 <- data1 %>% 
+    mutate(
+        native_country = ifelse(native_country %in% c('United-States', 'Mexico'), 
+                                native_country, 'other')
+    )
+
+
+count(data1, education)
+
+data1 <- data1 %>%
+  mutate(
+    education = ifelse(education %in% c('11th', '7th-8th', "5th-6th", '12th', "10th", "1st-4th", "9th", 'Preschool', "HS-grad"), 'School',  ifelse( education %in% c("Some-college", "Prof-school"), "College", ifelse( education %in% c("Assoc-voc", 'Assoc-acdm'), "Associate", education))))
+
+
+
+count(data1, workclass)
+
+data1 = data1 %>% 
+  mutate(
+    workclass = ifelse(workclass %in% c("Federal-gov", "Local-gov", "State-gov"), "governmental_position", ifelse(workclass %in% c("Self-emp-inc", "Self-emp-not-inc"), "Self-emp", ifelse(workclass %in% c('Without-pay', 'Never-worked'), "No-Pay", workclass)
+  )))
+
+# Changing the values for the workclass
+data1$workclass[data1$workclass == "governmental position"] = "governmental_position"
+data1$workclass[data1$workclass == "No-Pay"] = "No_Pay"
+data1$workclass[data1$workclass == "Self-emp"] = "Self_emp"
+
+
+count(data1, race)
+data1 = data1 %>% 
+  mutate(
+    race = ifelse(race %in% c("Amer-Indian-Eskimo", "Asian-Pac-Islander"), "Other", race)
+  )
+
+# replace all "-" in character variable values with "_"
+
+count(data1, occupation)
+
+data1$occupation <- gsub("-", "_", data1$occupation)
+
+count(data1, marital_status)
+data1$marital_status <- gsub("-", "_", data1$marital_status)
+
+count(data1, native_country)
+data1$native_country <- gsub("-", "_", data1$native_country)
+
+count(data1, relationship)
+data1$relationship <- gsub("-", "_", data1$relationship)
+
+
+```
+## **Visualization**
+
+```{r, message=FALSE}
+# plots
+data1 %>%
+  ggplot(aes(x = age, fill = income)) +
+  geom_histogram(aes(y = ..density..), color = 'grey78') +
+  theme_bw()+
+  stat_density(geom = 'line', color = 'darkgreen', size = 1) +
+  ggtitle("distribution of age by income") + 
+  xlab("Age") +
+  scale_fill_manual(values=c("deeppink4", "darkorange2"), labels = c("<=50k", ">50k")) +
+  theme(plot.title = element_text(color = "brown4", size = 15), # Configure the main plot title
+        axis.title = element_text(face = "bold", color = "cyan4"), 
+        # Change legend background color
+        legend.background = element_rect(fill = "bisque3"),
+        legend.key = element_rect(fill = "darkgreen", color = NA),
+        # Change legend key size and key width
+        legend.key.size = unit(2, "cm"),
+        legend.key.width = unit(0.5,"cm") 
+        ) +
+  labs(fill = "Income")
+```
+
+Distribution of the age variable. Distribution is right-skewed. Maximum value is `r max(data1$age)` and the smallest value is `r min(data1$age)`.The most frequent age is approximately between 30-40 years old. 
+
+
+Distribution of the age variable. Distribution is right-skewed. The most frequent age is approximately between 30-40 years old. Minimum value for age is 17 and maximum value for age is 90.  Group having income more than 50K is smaller comparing to group with income less than 50K. Group with 50K or more increases with age while group with less than 50K is dropping.   
+
+```{r}
+# Creating age groups
+data_age_groups = data1 %>% 
+  mutate(
+    # Create categories
+    age_group = case_when(
+      age <= 25            ~ "17-25",
+      age > 25 & age <= 35 ~ "26-35",
+      age > 35 & age <= 50 ~ "36-50",
+      age > 50 & age <= 70 ~ "51-70",
+      age > 70             ~ "> 70"
+    ),
+
+    age_group = factor(
+      age_group,
+      level = c("17-25", "26-35","36-50", "51-70", "> 70")
+    )
+  )
+
+data_age_groups1 <- data_age_groups %>% 
+  group_by(age_group) %>% 
+  summarise(number = n())
+
+
+
+```
+
+```{r, message = FALSE}
+ggplot(data = data_age_groups, aes(x = age, fill = factor(age_group))) +
+  geom_bar(position = 'dodge') +
+  ggtitle('Age distribution in statistical sample') +
+  xlab('Age') +
+  ylab('Population') +
+  theme_bw() +
+  theme(legend.position = 'bottom') +
+  guides(fill = guide_legend(nrow = 2,byrow = TRUE)) +
+  theme(plot.title = element_text(color = "brown4", size = 15),
+        axis.title = element_text(face = "bold", color = "cyan4"), 
+        legend.background = element_rect(color = "black")) +
+  labs(fill = "Age groups") 
+  
+  
+
+```
+
+we can see that the biggest group in our dataset is `r data_age_groups1$age_group[data_age_groups1$number == max(data_age_groups1$number)]`. 
+
+```{r}
+ggplot(data = data_age_groups1, aes(x = age_group, y = number)) +
+  geom_bar(stat = 'identity', fill = 'deeppink4', color = 'darksalmon') +
+  theme_bw() +
+  geom_text(aes(label = number), vjust = -0.5, color = 'black', size = 3.5) +
+  ggtitle("size of age groups") +
+  theme(plot.title = element_text(color = "brown4", size = 15), 
+        axis.title = element_text(face = "bold", color = "cyan4"), 
+        axis.title.y = element_blank()) +
+  xlab('age groups')
+
+```
+
+
+```{r, message=FALSE}
+data1 %>% 
+  ggplot(aes(x = marital_status, fill = income)) +
+  geom_bar(position = "dodge", width = 0.87) +
+  theme_bw() +
+  coord_flip() +
+  ggtitle("Marital Status  Income") +
+  scale_fill_manual(values=c("deeppink4", "darkorange2"), labels = c("<=50k", ">50k")) +
+  theme(plot.title = element_text(color = "brown4", size = 15), # Configure the main plot title
+        axis.title = element_text(face = "bold", color = "cyan4"), 
+        # Change legend background color
+        legend.background = element_rect(fill = "bisque3"),
+        legend.key = element_rect(fill = "darkgreen", color = NA),
+        # Change legend key size and key width
+        legend.key.size = unit(2, "cm"),
+        legend.key.width = unit(0.5,"cm") 
+        ) +
+  
+  labs(fill = "Income") +
+  xlab("marital status") 
+
+```
+
+In our data `r data1 %>% count(gender) %>% filter(n == min(n)) %>% dplyr::select(gender)` group less represented than the another with `r data1 %>% count(gender) %>% filter(n == min(n)) %>% dplyr::select(n)` .
+
+
+```{r, message=FALSE}
+data1 %>% 
+  ggplot(aes(x = gender, fill = income)) + geom_bar(position="dodge") +
+  theme_bw() +
+  ggtitle("Gender VS  Income") +
+  scale_fill_manual(values=c("deeppink4", "darkorange2"), labels = c("<=50k", ">50k")) +
+  theme(plot.title = element_text(color = "brown4", size = 15),
+        axis.title = element_text(face = "bold", color = "cyan4"),
+        axis.title.y = element_blank()) +
+  xlab("gender")
+
+```
+
+
+In our data `r data1 %>% count(gender) %>% filter(n == max(n)) %>% dplyr::select(gender)` group is more represented than the other with `r data1 %>% count(gender) %>% filter(n == max(n)) %>% dplyr::select(n)` observations. 
+
+```{r, message=FALSE}
+data1 %>% 
+  ggplot(aes(x = race, fill = income)) + geom_bar(position="dodge") +
+  theme_bw()+
+  coord_flip() +
+  scale_fill_manual(values=c("deeppink4", "darkorange2"), labels = c("<=50k", ">50k")) +
+  theme(plot.title = element_text(color = "brown4", size = 15),
+           axis.title = element_text(face = "bold", color = "cyan4")) +
+  xlab("race") +
+  ggtitle("Race vs Income")
+```
+The most representative race in our data is `r data1 %>% count(race) %>% filter(n == max(n)) %>% select(race)` with `r data1 %>% count(race) %>% filter(n == max(n)) %>% select(n)` observations. Other races underrepresented in our data hence they will be combined into one category.  
+
+```{r, message=FALSE}
+
+data1 %>% 
+  ggplot(aes(x = income, y = hours_per_week, fill = factor(gender))) +
+  geom_boxplot(varwidth = TRUE, outlier.shape = 10, outlier.color = 'red') + 
+  scale_fill_manual(values=c("deeppink4", "darkorange2")) +
+  theme(plot.title = element_text(color = "brown4", size = 15),
+           axis.title = element_text(face = "bold", color = "cyan4")) +
+  ylab("hours per week") +
+  xlab("income") +
+  ggtitle("Hours per week vs income") +
+  guides(fill=guide_legend(title="Gender")) +
+  scale_x_discrete(labels=c("0" = "=<50K", "1" = ">50K"))
+  
+```
+On the graphed it is illustrated that group which has income 50K or more works more hours during the week comparing to group which has less than 50K.  
+
+```{r, message=FALSE}
+ggplot(data = data1) +
+  aes(x=education_num, fill=education) +
+  geom_bar() + 
+  theme(plot.title = element_text(color = "brown4", size = 15),
+        axis.title = element_text(face = "bold", color = "cyan4")) +
+  xlab("years of education") +
+  ylab("counts") +
+  ggtitle("Counts of Years of Education")
+```
+
+From the histogram for years of schooling variable we can notice that the most frequent value is `r data1 %>% count(education_num) %>% arrange(desc(n)) %>% select(education_num) %>% slice(n=1)` years. The maximum value is `r max(data1$education_num)` years and minimum `r max(data1$education_num)` years of schooling.
+
+
+```{r, message=FALSE}
+
+ggplot(data = data1,aes( x = occupation, fill = factor(gender))) +
+  geom_bar(width = 0.8, position = 'dodge') +
+  labs(x = 'Work hours per week',
+       y = 'Occupation',
+       title = 'Occupation vs Gender') +
+  coord_flip() +
+  scale_fill_manual(values=c("deeppink4", "darkorange2")) +
+  theme(plot.title = element_text(color = "brown4", size = 15),
+        axis.title = element_text(face = "bold", color = "brown"),
+        axis.title.y = element_blank()) +
+  guides(fill=guide_legend(title="Gender"))
+
+```
+
+We can see that the biggest group is working as `r data1 %>% count(occupation) %>% filter(n == max(n)) %>%  dplyr::select(occupation)` with `r data1 %>% count(occupation) %>% filter(n == max(n)) %>%  dplyr::select(n)` observations. The smallest group is `r data1 %>% count(occupation) %>% filter(n == min(n)) %>%  dplyr::select(occupation)` with `r data1 %>% count(occupation) %>% filter(n == min(n)) %>%  dplyr::select(n)`
+
+
+```{r} 
+#### DONT KNOW HOW TO COMMENT!!!!!!!!!!
+data1 %>% 
+  ggplot(aes(x = income, fill = workclass)) + geom_bar(position="dodge") +
+  theme_bw()+
+  coord_flip() +
+  scale_fill_manual(values=c("deeppink4", "darkorange2", "grey50", "red", "purple", "seagreen3", "yellow", "blue", "pink")) +
+  theme(plot.title = element_text(color = "brown4", size = 15),
+           axis.title = element_text(face = "bold", color = "cyan4")) +
+  xlab("income group") +
+  ggtitle("Workclass vs Income")
+
+#data1 %>% group_by(workclass) %>% count(income) %>% arrange(desc(n)) %>% slice(1:2) %>% dplyr::select(workclass)
+```
+
+Private workclass earn more money in both income group but specifically in low income group, which is <= 50K, their earnings are way higher than other groups. People who work for Federal government are one of the least earners within low income group. 
+
+```{r}
+data1 %>% 
+  ggplot(aes(x = education, fill = income)) +
+  geom_bar(position = "fill", width = 0.87) +
+  theme_bw() +
+  coord_flip() +
+  ggtitle("Income by Education level") +
+  scale_fill_manual(values=c("darkgreen", "red"), labels = c("<=50k", ">50k")) +
+  theme(plot.title = element_text(color = "brown4", size = 15), # Configure the main plot title
+        axis.title = element_text(face = "bold", color = "cyan4"), 
+        # Change legend background color
+        legend.background = element_rect(fill = "bisque3"),
+        legend.key = element_rect(fill = "darkgreen", color = NA),
+        # Change legend key size and key width
+        legend.key.size = unit(2, "cm"),
+        legend.key.width = unit(0.5,"cm") 
+        ) +
+  labs(fill = "Income") +
+  xlab("Education level")
+
+#People with `r data1 %>% group_by(education) %>% count(income) %>% filter(income == 1) %>% arrange(desc(n)) %>% slice(1) %>% dplyr::select(education)` degrees has the biggest number of observations in group where people are getting >50K. So, with the higher education people are tend to get more money. At the opposite group where people are getting <=50K they tend to belong to `r data1 %>% group_by(education) %>% count(income) %>% filter(income == 0) %>% arrange(desc(n)) %>% slice(1) %>% dplyr::select(education)` group.
+
+```
+
+```{r}
+data1 %>% 
+  ggplot(aes(x =race  , fill = education)) + geom_bar(position="dodge") +
+  theme_bw()+
+  coord_flip() +
+  scale_fill_manual(values=c("deeppink4", "darkorange2", "black", "midnightblue","red", "burlywood3")) +
+  theme(plot.title = element_text(color = "brown4", size = 15),
+           axis.title = element_text(face = "bold", color = "cyan4")) +
+  xlab("race") +
+  ggtitle("Race vs Education type")
+```
+
+In general, people with `White` race tend to go after their education more than other races. Whereas, being High School grad is the most popular education type within black race.
+
+```{r}
+data1 %>% 
+  ggplot(aes(x = gender, fill = income)) + geom_bar(position="dodge") +
+  theme_bw()+
+  coord_flip() +
+  scale_fill_manual(values=c( "purple", "seagreen3"), labels = c("<=50k", ">50k")) +
+  theme(plot.title = element_text(color = "brown4", size = 15),
+           axis.title = element_text(face = "bold", color = "cyan4")) +
+  xlab("income group") +
+  ggtitle("Income VS Gender")
+
+```
+
+
+```{r}
+data_education_groups <- data1 %>% 
+  group_by(education) %>% 
+  summarise(number = n())
+```
+
+
+```{r}
+#install.packages("treemapify")
+library(treemapify)
+
+library(ggplot2)
+
+ggplot(data_education_groups, aes(area = number, fill = education, label =paste(round(number / sum(number) * 100, 1),"%"))) +
+  geom_treemap()+
+  geom_treemap_text(colour = "white",
+                    place = "centre",
+                    size = 16) +
+  scale_fill_brewer(palette = "Set3")
+  
+
+```  
+
+
+The biggest education group is `r data_education_groups$Group[data_education_groups$number ==max(data_education_groups$number)]` with `r max(data_education_groups$number)` observations. The smallest group is `r data_education_groups$Group[data_education_groups$number == min(data_education_groups$number)]` with `r min(data_education_groups$number)`
+
+```{r, message=FALSE, warning=FALSE}
+library(caret)
+
+options(contrasts = c("contr.treatment",  
+                      "contr.treatment"))
+
+set.seed(123)
+splitting <- createDataPartition(data1$income,
+                                          p = 0.7, 
+                                          list = FALSE) 
+
+train_data = data1[splitting,]
+test_data = data1[-splitting,]
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Load rpart and rpart.plot
+library(rpart)
+library(rpart.plot)
+# decision tree model
+tree <- rpart(income~., data=train_data, cp=.02)
+# Visualize the decision tree
+rpart.plot(tree,
+           box.palette ="RdYlGn" ,
+           shadow.col = "darkgray", 
+           nn= TRUE, 
+           branch = 0.7, 
+           clip.facs = T, 
+           Margin = 0.03, 
+           border.col = "blue", 
+           nn.font = 4, 
+           split.cex = 1.2, 
+           split.box.col = "lightgray", 
+           split.border.col = "darkgray",
+           split.round = .5)
+
+
+```
+
